@@ -65,7 +65,7 @@ vector<string> Stringsplit(string str, const const char split)
 	return rst;
 }
 
-static bool suppress = true;
+static bool suppress = false;
 
 void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan)
 {
@@ -76,7 +76,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 
 	// solve repeat callback
 	if (!suppress) {
-		suppress = true;
+		suppress =	true;
 		return;
 	}
 	suppress = false;
@@ -128,10 +128,16 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 				break;
 			}
 		}
+		else
+		{
+			if (point == last_sid_x_point) 
+			{
+				airway_next_to_sid = extracted_route.GetPointAirwayName(i + 1);
+			}
+		}
 
 		// repeat point in sid
 		if (sid != "" && extracted_route.GetPointAirwayName(i) == sid) {
-			airway_next_to_sid = extracted_route.GetPointAirwayName(i + 1);
 			last_sid_x_point = point;
 		}
 
@@ -205,7 +211,6 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 					}
 				}
 			}
-			i++;
 			is_sid_passed = true;
 		}
 
@@ -222,7 +227,10 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 			break;
 		}
 
-		new_route += splited_raw_route[i] + " ";
+		if (is_sid_passed)
+		{
+			new_route += splited_raw_route[i] + " ";
+		}
 
 		if (i == splited_raw_route.size() - 1)
 		{
@@ -239,5 +247,5 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
-	flightplan_data.SetRoute(trim(new_route).c_str());
+	bool a = flightplan_data.SetRoute(trim(new_route).c_str());
 }
