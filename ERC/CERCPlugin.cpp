@@ -30,7 +30,7 @@ CERCPlugin::CERCPlugin()
 		PLUGIN_COPYRIGHT
 	)
 {
-	DisplayUserMessage("message", "Exact Route Cliper", string("Version " + MY_PLUGIN_VERSION + " loaded").c_str(), true, true, false, true, false);
+	DisplayUserMessage("message", "Exact Route Cliper", string("Version " + MY_PLUGIN_VERSION + " loaded").c_str(), true, false, false, false, false);
 }
 
 CERCPlugin::~CERCPlugin()
