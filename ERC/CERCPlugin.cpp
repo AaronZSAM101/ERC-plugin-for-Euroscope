@@ -229,7 +229,14 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 
 		if (is_sid_passed)
 		{
-			new_route += splited_raw_route[i] + " ";
+			if (splited_raw_route[i] != sid && splited_raw_route[i] != sid + "/" + dep_rwy && splited_raw_route[i] != origin + "/" + dep_rwy)
+			{
+				new_route += splited_raw_route[i] + " ";
+			}
+			else
+			{
+				i++;
+			}
 		}
 
 		if (i == splited_raw_route.size() - 1)
@@ -247,5 +254,5 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
-	bool a = flightplan_data.SetRoute(trim(new_route).c_str());
+	flightplan_data.SetRoute(trim(new_route).c_str());
 }
