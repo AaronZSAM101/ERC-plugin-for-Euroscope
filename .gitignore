@@ -361,3 +361,12 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Euroscope files
+euroscope_sector_providers.txt
+SectorFileProviderDescriptor.txt
+version.txt
+ipaddr.txt
+
+# sentry files
+.sentry-native/
