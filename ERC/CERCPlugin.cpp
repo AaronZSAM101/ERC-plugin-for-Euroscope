@@ -239,8 +239,5 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
-	DisplayUserMessage("message", "Exact Route Cliper", ("new route: " + trim(new_route)).c_str(), true, true, false, true, false);
-
 	flightplan_data.SetRoute(trim(new_route).c_str());
-	//flightplan_data.AmendFlightPlan();
 }
