@@ -65,21 +65,12 @@ vector<string> Stringsplit(string str, const const char split)
 	return rst;
 }
 
-static bool suppress = false;
-
 void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan)
 {
 	// exit if not assumed
 	if (!FlightPlan.GetTrackingControllerIsMe()) {
 		return;
 	}
-
-	// solve repeat callback
-	if (!suppress) {
-		suppress =	true;
-		return;
-	}
-	suppress = false;
 
 	vector<string> route;
 	string last_sid_x_point, first_star_x_point;
