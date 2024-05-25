@@ -88,6 +88,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	// prepare data to compare
 	EuroScopePlugIn::CFlightPlanExtractedRoute extracted_route = FlightPlan.GetExtractedRoute();
 	EuroScopePlugIn::CFlightPlanData flightplan_data = FlightPlan.GetFlightPlanData();
+	EuroScopePlugIn::CFlightPlanControllerAssignedData controller_assign_data = FlightPlan.GetControllerAssignedData();
 	string raw_route = flightplan_data.GetRoute();
 	vector<string> splited_raw_route = Stringsplit(raw_route, ' ');
 	string sid = flightplan_data.GetSidName();
@@ -130,7 +131,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 		else
 		{
-			if (point == last_sid_x_point) 
+			if (point == last_sid_x_point)
 			{
 				airway_next_to_sid = extracted_route.GetPointAirwayName(i + 1);
 			}
@@ -214,7 +215,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 			is_sid_passed = true;
 		}
 
-		if (i == id_airway_before_star) 
+		if (i == id_airway_before_star)
 		{
 			if (arr_rwy == "")
 			{
@@ -254,5 +255,11 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
-	flightplan_data.SetRoute(trim(new_route).c_str());
+	if (flightplan_data.SetRoute(trim(new_route).c_str()))
+	{
+		flightplan_data.AmendFlightPlan();
+	}
+	else {
+		DisplayUserMessage("message", "Exact Route Cliper", string("set route fail: " + string(FlightPlan.GetCallsign())).c_str(), true, true, true, true, false);
+	}
 }
