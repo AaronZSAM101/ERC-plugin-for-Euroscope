@@ -74,12 +74,11 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		return;
 	}
 
-	// solve repeat callback
-	if (!suppress) {
-		suppress =	true;
+	// state machine to solve repeat callback
+	if (suppress) {
 		return;
 	}
-	suppress = false;
+	suppress = true;
 
 	vector<string> route;
 	string last_sid_x_point, first_star_x_point;
@@ -99,6 +98,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	string destination = flightplan_data.GetDestination();
 	int route_count = extracted_route.GetPointsNumber();
 
+	// fliter out all the procedures and runways estimated by ES
 	if (dep_rwy != "" && raw_route.find(sid + "/" + dep_rwy) == string::npos && raw_route.find(origin + "/" + dep_rwy) == string::npos) {
 		dep_rwy = "";
 	}
@@ -114,6 +114,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 
 	// skip if no sid nor star
 	if (sid == "" && star == "") {
+		suppress = false;
 		return;
 	}
 
@@ -152,6 +153,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
+	// find the last airway before STAR begining
 	int id_airway_before_star;
 	if (airway_before_star == "" || find(splited_raw_route.begin(), splited_raw_route.end(), airway_before_star) == splited_raw_route.end()) {
 		id_airway_before_star = -1;
@@ -160,6 +162,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		id_airway_before_star = distance(splited_raw_route.begin(), find(splited_raw_route.rbegin(), splited_raw_route.rend(), airway_before_star).base()) - 1;
 	}
 
+	// generate new route
 	bool is_sid_passed = sid == "";
 	string new_route = "";
 	for (int i = 0; i < splited_raw_route.size(); i++)
@@ -255,11 +258,28 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
-	if (flightplan_data.SetRoute(trim(new_route).c_str()))
+	// trim the new route
+	string trimed_new_route = trim(new_route);
+
+	// if no changes on the route, exit
+	if (trimed_new_route == raw_route)
 	{
-		flightplan_data.AmendFlightPlan();
+		suppress = false;
+		return;
 	}
-	else {
+
+	// set route replace into the flightplan
+	if (flightplan_data.SetRoute(trimed_new_route.c_str()))
+	{
+		if (flightplan_data.IsAmended())
+		{
+			flightplan_data.AmendFlightPlan();
+		}
+	}
+	else 
+	{
 		DisplayUserMessage("message", "Exact Route Cliper", string("set route fail: " + string(FlightPlan.GetCallsign())).c_str(), true, true, true, true, false);
 	}
+
+	suppress = false;
 }
