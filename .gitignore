@@ -365,6 +365,7 @@ FodyWeavers.xsd
 # Euroscope files
 euroscope_sector_providers.txt
 SectorFileProviderDescriptor.txt
+/ERC/SectorFileProviderDescriptor.txt
 version.txt
 ipaddr.txt
 
