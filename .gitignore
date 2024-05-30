@@ -364,10 +364,13 @@ FodyWeavers.xsd
 
 # Euroscope files
 euroscope_sector_providers.txt
+/ERC/euroscope_sector_providers.txt
 SectorFileProviderDescriptor.txt
 /ERC/SectorFileProviderDescriptor.txt
 version.txt
+/ERC/version.txt
 ipaddr.txt
+/ERC/ipaddr.txt
 
 # sentry files
 .sentry-native/
