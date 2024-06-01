@@ -17,3 +17,9 @@ Exact Route Cliper plugin for Euroscope
 
 ## Developing
 If you have any question or any bug to report, please open an issue.
+
+## Thanks
+- Developers or projects whose code is used in this project:
+  - [MTEPlugin-for-EuroScope](https://github.com/KingfuChan/MTEPlugin-for-EuroScope) by [@KingfuChan](https://github.com/KingfuChan)
+- People who provide suggestions or important bug reports:
+  - [AaronZSAM101](https://github.com/AaronZSAM101)
