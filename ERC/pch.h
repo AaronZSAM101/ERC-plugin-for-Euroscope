@@ -16,12 +16,12 @@ using namespace std;
 
 // Version Info Define
 #define PLUGIN_NAME      "Exact Route Cliper"
-#define PLUGIN_VERSION   "1.0.3.3"
+#define PLUGIN_VERSION   "1.0.4.4"
 #define PLUGIN_DEVELOPER "Leo Chen"
 #define PLUGIN_COPYRIGHT "Copyright (C) 2024 Leo Chen, lisenced under GPL v3."
 
 const string MY_PLUGIN_NAME = "Exact Route Cliper";
-const string MY_PLUGIN_VERSION = "1.0.3.3";
+const string MY_PLUGIN_VERSION = "1.0.4.4";
 const string MY_PLUGIN_DEVELOPER = "Leo Chen";
 const string MY_PLUGIN_COPYRIGHT = "Copyright (C) 2024 Leo Chen, lisenced under GPL v3.";
 
