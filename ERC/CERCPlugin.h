@@ -1,5 +1,7 @@
 #pragma once
 #include "pch.h"
+#include <unordered_map>
+#include <unordered_set>
 
 class CERCPlugin :
 	public EuroScopePlugIn::CPlugIn
@@ -12,4 +14,8 @@ public:
 
 private:
 	CERCPlugin* pERC;
+
+	std::unordered_map<std::string, std::unordered_set<std::string>> m_SIDSTAR;
+
+	void LoadSIDSTARs();
 };
