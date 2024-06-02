@@ -21,6 +21,17 @@ void    __declspec (dllexport)    EuroScopePlugInExit(void)
 	delete gpMyPlugin;
 }
 
+void CERCPlugin::LoadSIDSTARs()
+{
+	// read sector file SID/STAR
+	for (auto se = SectorFileElementSelectFirst(EuroScopePlugIn::SECTOR_ELEMENT_SIDS_STARS);
+		se.IsValid();
+		se = SectorFileElementSelectNext(se, EuroScopePlugIn::SECTOR_ELEMENT_SIDS_STARS))
+	{
+		m_SIDSTAR[se.GetAirportName()].insert(se.GetName());
+	}
+}
+
 CERCPlugin::CERCPlugin()
 	: EuroScopePlugIn::CPlugIn(
 		EuroScopePlugIn::COMPATIBILITY_CODE,
@@ -30,6 +41,8 @@ CERCPlugin::CERCPlugin()
 		PLUGIN_COPYRIGHT
 	)
 {
+	//LoadSIDSTARs();		// load SIDs and STARs, it's not used current;
+
 	DisplayUserMessage("message", "Exact Route Cliper", string("Version " + MY_PLUGIN_VERSION + " loaded").c_str(), true, false, false, false, false);
 }
 
@@ -68,7 +81,8 @@ vector<string> Stringsplit(string str, const const char split)
 void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan)
 {
 	// exit if not assumed
-	if (!FlightPlan.GetTrackingControllerIsMe()) {
+	if (!FlightPlan.GetTrackingControllerIsMe() || !FlightPlan.IsValid()) 
+	{
 		return;
 	}
 
@@ -161,10 +175,19 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	}
 
 	// generate new route
-	bool is_sid_passed = sid == "";
+	bool is_sid_passed = sid == "" && dep_rwy == "";
+	string tmp1 = "", tmp2 = "";
 	string new_route = "";
 	for (int i = 0; i < splited_raw_route.size(); i++)
 	{
+		// avoid repeat
+		if (splited_raw_route[i] == tmp1 || splited_raw_route[i] == tmp2) 
+		{
+			continue;
+		}
+		tmp2 = tmp1;
+		tmp1 = splited_raw_route[i];
+
 		if (!is_sid_passed && (splited_raw_route[i] == airway_next_to_sid || airway_next_to_sid == ""))
 		{
 			if (last_sid_x_point == "")
@@ -174,6 +197,8 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 					if (dep_rwy != "")
 					{
 						new_route = origin + "/" + dep_rwy + " ";
+						tmp2 = tmp1;
+						tmp1 = origin + "/" + dep_rwy;
 					}
 				}
 				else
@@ -181,10 +206,14 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 					if (dep_rwy == "")
 					{
 						new_route += sid + " ";
+						tmp2 = tmp1;
+						tmp1 = sid;
 					}
 					else
 					{
 						new_route += sid + "/" + dep_rwy + " ";
+						tmp2 = tmp1;
+						tmp1 = sid + "/" + dep_rwy;
 					}
 				}
 			}
@@ -195,10 +224,14 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 					if (dep_rwy == "")
 					{
 						new_route = last_sid_x_point + " ";
+						tmp2 = tmp1;
+						tmp1 = last_sid_x_point;
 					}
 					else
 					{
 						new_route = origin + "/" + dep_rwy + " " + last_sid_x_point + " ";
+						tmp2 = tmp1;
+						tmp1 = last_sid_x_point;
 					}
 				}
 				else
@@ -206,10 +239,14 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 					if (dep_rwy == "")
 					{
 						new_route += sid + " " + last_sid_x_point + " ";
+						tmp2 = tmp1;
+						tmp1 = last_sid_x_point;
 					}
 					else
 					{
 						new_route += sid + "/" + dep_rwy + " " + last_sid_x_point + " ";
+						tmp2 = tmp1;
+						tmp1 = last_sid_x_point;
 					}
 				}
 			}
@@ -235,10 +272,6 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 			{
 				new_route += splited_raw_route[i] + " ";
 			}
-			else
-			{
-				i++;
-			}
 		}
 
 		if (i == splited_raw_route.size() - 1)
@@ -246,11 +279,19 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 			if (star != "") {
 				if (arr_rwy == "")
 				{
-					new_route += star;
+					if (tmp1 != star && tmp2 != star) {
+						new_route += star;
+						tmp2 = tmp1;
+						tmp1 = star;
+					}
 				}
 				else
 				{
-					new_route += star + "/" + arr_rwy;
+					if(tmp1 != star + "/" + arr_rwy && tmp2 != star + "/" + arr_rwy){
+						new_route += star + "/" + arr_rwy;
+						tmp2 = tmp1;
+						tmp1 = star + "/" + arr_rwy;
+					}
 				}
 			}
 		}
@@ -281,3 +322,4 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 
 	suppress = false;
 }
+
