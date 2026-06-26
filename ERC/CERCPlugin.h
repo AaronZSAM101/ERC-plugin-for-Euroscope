@@ -13,9 +13,12 @@ public:
 	void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);
 
 private:
+	bool suppress = false;
+
 	CERCPlugin* pERC;
 
 	std::unordered_map<std::string, std::unordered_set<std::string>> m_SIDSTAR;
+	std::unordered_map<std::string, std::string> m_lastSetRoutes;
 
 	void LoadSIDSTARs();
 };

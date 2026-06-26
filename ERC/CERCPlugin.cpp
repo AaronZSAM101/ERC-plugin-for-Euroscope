@@ -95,12 +95,22 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	vector<string> route;
 	string last_sid_x_point, first_star_x_point;
 	string airway_next_to_sid, airway_before_star;
+	string sid_exit_point = "";
 
 	// prepare data to compare
 	EuroScopePlugIn::CFlightPlanExtractedRoute extracted_route = FlightPlan.GetExtractedRoute();
 	EuroScopePlugIn::CFlightPlanData flightplan_data = FlightPlan.GetFlightPlanData();
 	EuroScopePlugIn::CFlightPlanControllerAssignedData controller_assign_data = FlightPlan.GetControllerAssignedData();
 	string raw_route = flightplan_data.GetRoute();
+	string callsign = FlightPlan.GetCallsign();
+	auto last_set_route = m_lastSetRoutes.find(callsign);
+	if (last_set_route != m_lastSetRoutes.end()) {
+		if (last_set_route->second == raw_route) {
+			suppress = false;
+			return;
+		}
+		m_lastSetRoutes.erase(last_set_route);
+	}
 	vector<string> splited_raw_route = Stringsplit(raw_route, ' ');
 	string sid = flightplan_data.GetSidName();
 	string dep_rwy = flightplan_data.GetDepartureRwy();
@@ -109,6 +119,12 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	string origin = flightplan_data.GetOrigin();
 	string destination = flightplan_data.GetDestination();
 	int route_count = extracted_route.GetPointsNumber();
+	for (char ch : sid) {
+		if (isdigit(static_cast<unsigned char>(ch))) {
+			break;
+		}
+		sid_exit_point += ch;
+	}
 
 	// fliter out all the procedures and runways estimated by ES
 	if (dep_rwy != "" && raw_route.find(sid + "/" + dep_rwy) == string::npos && raw_route.find(origin + "/" + dep_rwy) == string::npos) {
@@ -131,6 +147,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	}
 
 	// find repeated route
+	bool is_sid_seen = false;
 	for (int i = 1; i < route_count; i++)
 	{
 		string point = extracted_route.GetPointName(i);
@@ -152,14 +169,43 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 
 		// repeat point in sid
 		if (sid != "" && extracted_route.GetPointAirwayName(i) == sid) {
+			is_sid_seen = true;
 			last_sid_x_point = point;
+		}
+		if (sid_exit_point != "" && is_sid_seen && point == sid_exit_point) {
+			last_sid_x_point = point;
+			if (i + 1 < route_count) {
+				airway_next_to_sid = extracted_route.GetPointAirwayName(i + 1);
+			}
 		}
 
 		// repeat point in star
-		if (star != "" && extracted_route.GetPointAirwayName(i + 1) == star) {
+		if (star != "" && i + 1 < route_count && extracted_route.GetPointAirwayName(i + 1) == star) {
 			if (first_star_x_point == "") {
 				airway_before_star = extracted_route.GetPointAirwayName(i);
-				first_star_x_point = point;
+
+				string first_star_segment_start = point;
+				string first_star_segment_end = extracted_route.GetPointName(i + 1);
+				string star_entry_point = "";
+				for (char ch : star) {
+					if (isdigit(static_cast<unsigned char>(ch))) {
+						break;
+					}
+					star_entry_point += ch;
+				}
+
+				if (star_entry_point != "" && find(route.begin(), route.end(), star_entry_point) != route.end()) {
+					first_star_x_point = star_entry_point;
+				}
+				else if (star_entry_point != "" && first_star_segment_start == star_entry_point) {
+					first_star_x_point = first_star_segment_start;
+				}
+				else if (star_entry_point != "" && first_star_segment_end == star_entry_point) {
+					first_star_x_point = first_star_segment_end;
+				}
+				else {
+					first_star_x_point = first_star_segment_start;
+				}
 			}
 			break;
 		}
@@ -310,6 +356,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	// set route replace into the flightplan
 	if (flightplan_data.SetRoute(trimed_new_route.c_str()))
 	{
+		m_lastSetRoutes[callsign] = trimed_new_route;
 		if (flightplan_data.IsAmended())
 		{
 			flightplan_data.AmendFlightPlan();
