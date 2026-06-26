@@ -188,7 +188,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 				string first_star_segment_end = extracted_route.GetPointName(i + 1);
 				string star_entry_point = "";
 				for (char ch : star) {
-					if (isdigit(static_cast<unsigned char>(ch))) {
+					if (isdigit(static_cast<unsigned char>(ch)) || ch == 'x') {
 						break;
 					}
 					star_entry_point += ch;
