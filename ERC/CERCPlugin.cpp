@@ -64,7 +64,7 @@ std::string& trim(std::string& s) {
 	return s;
 }
 
-vector<string> Stringsplit(string str, const const char split)
+vector<string> Stringsplit(string str, const char split)
 {
 	istringstream iss(str);
 	string token;
@@ -87,10 +87,38 @@ bool HasRouteToken(const vector<string>& route, const string& token)
 	return find(route.begin(), route.end(), token) != route.end();
 }
 
+string GetRouteTokenName(const string& token)
+{
+	return token.substr(0, token.find('/'));
+}
+
+bool IsSpeedLevelToken(const string& token)
+{
+	string name = GetRouteTokenName(token);
+
+	bool is_metric = name.size() == 10 && name[0] == 'K' && name[5] == 'S';
+	bool is_imperial = name.size() == 9 && name[0] == 'N' && name[5] == 'F';
+	if (!is_metric && !is_imperial) {
+		return false;
+	}
+
+	for (size_t i = 1; i < name.size(); i++) {
+		if (i != 5 && !isdigit(static_cast<unsigned char>(name[i]))) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 bool IsProcedureRouteToken(const string& token)
 {
-	string name = token.substr(0, token.find('/'));
+	string name = GetRouteTokenName(token);
 	bool has_digit = false;
+
+	if (IsSpeedLevelToken(token)) {
+		return false;
+	}
 
 	for (char ch : name) {
 		if (isdigit(static_cast<unsigned char>(ch))) {
@@ -100,6 +128,126 @@ bool IsProcedureRouteToken(const string& token)
 	}
 
 	return has_digit && !name.empty() && isalpha(static_cast<unsigned char>(name[name.size() - 1]));
+}
+
+bool IsSameProcedureToken(const string& token, const string& procedure, const string& runway)
+{
+	if (procedure == "") {
+		return false;
+	}
+
+	return token == procedure || (runway != "" && token == procedure + "/" + runway);
+}
+
+string GetProcedurePrefixPoint(const string& procedure)
+{
+	string prefix = "";
+	string name = GetRouteTokenName(procedure);
+
+	for (char ch : name) {
+		if (isdigit(static_cast<unsigned char>(ch)) || toupper(static_cast<unsigned char>(ch)) == 'X') {
+			break;
+		}
+		prefix += ch;
+	}
+
+	return prefix;
+}
+
+size_t FindInitialProcedureTokenIndex(const vector<string>& route)
+{
+	const size_t max_initial_tokens = 3;
+	size_t limit = min(route.size(), max_initial_tokens);
+
+	for (size_t i = 0; i < limit; i++) {
+		if (IsProcedureRouteToken(route[i])) {
+			return i;
+		}
+	}
+
+	return route.size();
+}
+
+string GetProcedureEncodedPoint(const string& procedure)
+{
+	string prefix = "";
+	string suffix = "";
+	size_t i = 0;
+	string name = GetRouteTokenName(procedure);
+
+	while (i < name.size() && !isdigit(static_cast<unsigned char>(name[i]))) {
+		prefix += name[i];
+		i++;
+	}
+	while (i < name.size() && isdigit(static_cast<unsigned char>(name[i]))) {
+		i++;
+	}
+	while (i < name.size()) {
+		suffix += name[i];
+		i++;
+	}
+
+	if (prefix == "" || suffix == "") {
+		return "";
+	}
+
+	return prefix + suffix;
+}
+
+bool IsSidHeadToken(
+	const string& token,
+	const string& sid,
+	const string& dep_rwy,
+	const string& sid_transition_exit_point,
+	const string& sid_encoded_exit_point,
+	const string& last_sid_x_point)
+{
+	return IsSpeedLevelToken(token) ||
+		IsSameProcedureToken(token, sid, dep_rwy) ||
+		IsProcedureRouteToken(token) ||
+		token == sid_transition_exit_point ||
+		token == sid_encoded_exit_point ||
+		token == last_sid_x_point;
+}
+
+size_t GetSidHeadTokenCount(
+	const vector<string>& route,
+	const string& sid,
+	const string& dep_rwy,
+	const string& sid_transition_exit_point,
+	const string& sid_encoded_exit_point,
+	const string& last_sid_x_point)
+{
+	if (sid == "" || route.empty()) {
+		return 0;
+	}
+
+	size_t index = 0;
+	if (IsSpeedLevelToken(route[index])) {
+		index++;
+	}
+
+	if (index >= route.size()) {
+		return 0;
+	}
+
+	bool matched_sid_head = false;
+	string token = route[index];
+	if (IsSidHeadToken(token, sid, dep_rwy, sid_transition_exit_point, sid_encoded_exit_point, last_sid_x_point)) {
+		index++;
+		matched_sid_head = true;
+	}
+
+	if (!matched_sid_head) {
+		return 0;
+	}
+
+	while (index < route.size() &&
+		IsSidHeadToken(route[index], sid, dep_rwy, sid_transition_exit_point, sid_encoded_exit_point, last_sid_x_point)) {
+		index++;
+	}
+
+	return index;
 }
 
 void CERCPlugin::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan)
@@ -148,16 +296,23 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	string origin = flightplan_data.GetOrigin();
 	string destination = flightplan_data.GetDestination();
 	int route_count = extracted_route.GetPointsNumber();
-	for (char ch : sid) {
-		if (isdigit(static_cast<unsigned char>(ch))) {
-			break;
-		}
-		sid_transition_exit_point += ch;
-	}
+	sid_transition_exit_point = GetProcedurePrefixPoint(sid);
 
 	// fliter out all the procedures and runways estimated by ES
 	bool has_sid_token = HasRouteToken(splited_raw_route, sid) || (dep_rwy != "" && HasRouteToken(splited_raw_route, sid + "/" + dep_rwy));
-	bool replace_initial_sid = sid != "" && !has_sid_token && !splited_raw_route.empty() && IsProcedureRouteToken(splited_raw_route[0]);
+	string sid_encoded_exit_point = GetProcedureEncodedPoint(sid);
+	size_t sid_head_token_count = GetSidHeadTokenCount(splited_raw_route, sid, dep_rwy, sid_transition_exit_point, sid_encoded_exit_point, "");
+	bool replace_initial_sid = sid != "" && sid_head_token_count > 0;
+	if (!replace_initial_sid) {
+		size_t initial_sid_index = FindInitialProcedureTokenIndex(splited_raw_route);
+		if (initial_sid_index < splited_raw_route.size()) {
+			sid_head_token_count = initial_sid_index + 1;
+			if (sid_head_token_count < splited_raw_route.size() && (splited_raw_route[sid_head_token_count] == sid_encoded_exit_point || splited_raw_route[sid_head_token_count] == sid_transition_exit_point)) {
+				sid_head_token_count++;
+			}
+			replace_initial_sid = sid != "";
+		}
+	}
 	bool has_star_token = HasRouteToken(splited_raw_route, star) || (arr_rwy != "" && HasRouteToken(splited_raw_route, star + "/" + arr_rwy));
 	bool replace_final_star = star != "" && !has_star_token && !splited_raw_route.empty() && IsProcedureRouteToken(splited_raw_route[splited_raw_route.size() - 1]);
 
@@ -221,13 +376,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 
 				string first_star_segment_start = point;
 				string first_star_segment_end = extracted_route.GetPointName(i + 1);
-				string star_entry_point = "";
-				for (char ch : star) {
-					if (isdigit(static_cast<unsigned char>(ch)) || ch == 'x') {
-						break;
-					}
-					star_entry_point += ch;
-				}
+				string star_entry_point = GetProcedurePrefixPoint(star);
 
 				if (star_entry_point != "" && find(route.begin(), route.end(), star_entry_point) != route.end()) {
 					first_star_x_point = star_entry_point;
@@ -246,6 +395,9 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
+	sid_head_token_count = GetSidHeadTokenCount(splited_raw_route, sid, dep_rwy, sid_transition_exit_point, sid_encoded_exit_point, last_sid_x_point);
+	replace_initial_sid = sid != "" && sid_head_token_count > 0;
+
 	// find the last airway before STAR begining
 	int id_airway_before_star;
 	if (airway_before_star == "" || find(splited_raw_route.begin(), splited_raw_route.end(), airway_before_star) == splited_raw_route.end()) {
@@ -259,17 +411,25 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	if (replace_final_star && !route_to_generate.empty()) {
 		route_to_generate.pop_back();
 	}
-	if (replace_initial_sid && !route_to_generate.empty()) {
-		route_to_generate.erase(route_to_generate.begin());
-		if (id_airway_before_star > 0) {
-			id_airway_before_star--;
+	if (replace_initial_sid && sid_head_token_count > 0 && sid_head_token_count <= route_to_generate.size()) {
+		route_to_generate.erase(route_to_generate.begin(), route_to_generate.begin() + sid_head_token_count);
+		if (id_airway_before_star >= static_cast<int>(sid_head_token_count)) {
+			id_airway_before_star -= static_cast<int>(sid_head_token_count);
 		}
-		else if (id_airway_before_star == 0) {
+		else if (id_airway_before_star >= 0) {
 			id_airway_before_star = -1;
 		}
 	}
-	else if (sid != "" && !route_to_generate.empty() && (route_to_generate[0] == sid || route_to_generate[0] == sid + "/" + dep_rwy)) {
-		size_t stale_sid_index = 1;
+	else if (sid != "" && has_sid_token) {
+		size_t current_sid_index = route_to_generate.size();
+		for (size_t i = 0; i < min(route_to_generate.size(), static_cast<size_t>(3)); i++) {
+			if (route_to_generate[i] == sid || route_to_generate[i] == sid + "/" + dep_rwy) {
+				current_sid_index = i;
+				break;
+			}
+		}
+
+		size_t stale_sid_index = current_sid_index + 1;
 		if (stale_sid_index < route_to_generate.size() && last_sid_x_point != "" && route_to_generate[stale_sid_index] == last_sid_x_point) {
 			stale_sid_index++;
 		}
@@ -284,11 +444,52 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 	}
 
+	if (replace_initial_sid) {
+		string new_route = "";
+		if (dep_rwy == "") {
+			new_route += sid + " ";
+		}
+		else {
+			new_route += sid + "/" + dep_rwy + " ";
+		}
+
+		if (last_sid_x_point != "") {
+			new_route += last_sid_x_point + " ";
+		}
+
+		for (const auto& token : route_to_generate) {
+			new_route += token + " ";
+		}
+
+		string trimed_new_route = trim(new_route);
+		if (trimed_new_route == raw_route)
+		{
+			suppress = false;
+			return;
+		}
+
+		if (flightplan_data.SetRoute(trimed_new_route.c_str()))
+		{
+			m_lastSetRoutes[callsign] = trimed_new_route;
+			if (flightplan_data.IsAmended())
+			{
+				flightplan_data.AmendFlightPlan();
+			}
+		}
+		else
+		{
+			DisplayUserMessage("message", "Exact Route Cliper", string("set route fail: " + string(FlightPlan.GetCallsign())).c_str(), true, true, true, true, false);
+		}
+
+		suppress = false;
+		return;
+	}
+
 	// generate new route
-	bool is_sid_passed = sid == "" && dep_rwy == "";
+	bool is_sid_passed = (sid == "" && dep_rwy == "") || (sid != "" && (HasRouteToken(route_to_generate, sid) || HasRouteToken(route_to_generate, sid + "/" + dep_rwy)));
 	string tmp1 = "", tmp2 = "";
 	string new_route = "";
-	for (int i = 0; i < route_to_generate.size(); i++)
+	for (size_t i = 0; i < route_to_generate.size(); i++)
 	{
 		// avoid repeat
 		if (route_to_generate[i] == tmp1 || route_to_generate[i] == tmp2)
@@ -299,7 +500,9 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		tmp1 = route_to_generate[i];
 
 		bool sid_inserted_this_iteration = false;
-		if (!is_sid_passed && (route_to_generate[i] == airway_next_to_sid || airway_next_to_sid == ""))
+		bool is_initial_sid_replacement_point = replace_initial_sid && i == 0;
+		bool is_sid_insert_point = replace_initial_sid ? is_initial_sid_replacement_point : (route_to_generate[i] == airway_next_to_sid || airway_next_to_sid == "");
+		if (!is_sid_passed && is_sid_insert_point)
 		{
 			if (last_sid_x_point == "")
 			{
@@ -347,17 +550,24 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 				}
 				else
 				{
+					bool append_sid_exit_point = last_sid_x_point != "";
 					if (dep_rwy == "")
 					{
-						new_route += sid + " " + last_sid_x_point + " ";
+						new_route += sid + " ";
+						if (append_sid_exit_point) {
+							new_route += last_sid_x_point + " ";
+						}
 						tmp2 = tmp1;
-						tmp1 = last_sid_x_point;
+						tmp1 = append_sid_exit_point ? last_sid_x_point : sid;
 					}
 					else
 					{
-						new_route += sid + "/" + dep_rwy + " " + last_sid_x_point + " ";
+						new_route += sid + "/" + dep_rwy + " ";
+						if (append_sid_exit_point) {
+							new_route += last_sid_x_point + " ";
+						}
 						tmp2 = tmp1;
-						tmp1 = last_sid_x_point;
+						tmp1 = append_sid_exit_point ? last_sid_x_point : sid + "/" + dep_rwy;
 					}
 				}
 			}
@@ -365,7 +575,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 			sid_inserted_this_iteration = true;
 		}
 
-		if (i == id_airway_before_star)
+		if (id_airway_before_star >= 0 && i == static_cast<size_t>(id_airway_before_star))
 		{
 			if (arr_rwy == "")
 			{
