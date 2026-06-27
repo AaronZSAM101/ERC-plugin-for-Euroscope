@@ -1,0 +1,120 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "*.*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and publish release
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.ref_type }}" -eq "tag") {
+            $version = "${{ github.ref_name }}"
+          }
+          else {
+            $versionLine = Select-String -Path ".\ERC\pch.h" -Pattern '#define\s+PLUGIN_VERSION\s+"(\d+)\.(\d+)\.(\d+)\.(\d+)"'
+            if (-not $versionLine) {
+              throw "Could not find PLUGIN_VERSION in ERC\pch.h."
+            }
+
+            $major = [int]$versionLine.Matches[0].Groups[1].Value
+            $minor = [int]$versionLine.Matches[0].Groups[2].Value
+            $patch = [int]$versionLine.Matches[0].Groups[3].Value
+            $baseBuild = [int]$versionLine.Matches[0].Groups[4].Value
+            $build = $baseBuild + [int]"${{ github.run_number }}"
+            $version = "$major.$minor.$patch.$build"
+          }
+
+          if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+            throw "Version '$version' must use major.minor.patch.build, for example 1.0.0.42."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Update build version
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $parts = $version.Split(".")
+          $commaVersion = $parts -join ","
+
+          $pch = Get-Content ".\ERC\pch.h" -Raw
+          $pch = $pch -replace '#define\s+PLUGIN_VERSION\s+"[^"]+"', "#define PLUGIN_VERSION   `"$version`""
+          $pch = $pch -replace 'const string MY_PLUGIN_VERSION = "[^"]+";', "const string MY_PLUGIN_VERSION = `"$version`";"
+          Set-Content ".\ERC\pch.h" $pch -NoNewline
+
+          $rc = Get-Content ".\ERC\ERC.rc" -Raw
+          $rc = $rc -replace 'FILEVERSION\s+\d+,\d+,\d+,\d+', "FILEVERSION $commaVersion"
+          $rc = $rc -replace 'PRODUCTVERSION\s+\d+,\d+,\d+,\d+', "PRODUCTVERSION $commaVersion"
+          $rc = $rc -replace 'VALUE "FileVersion", "[^"]+"', "VALUE `"FileVersion`", `"$version`""
+          $rc = $rc -replace 'VALUE "ProductVersion", "[^"]+"', "VALUE `"ProductVersion`", `"$version`""
+          Set-Content ".\ERC\ERC.rc" $rc -NoNewline
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build
+        shell: pwsh
+        run: msbuild .\ERC.sln /p:Configuration=Release /p:Platform=x86 /m
+
+      - name: Package
+        id: package
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $staging = Join-Path $env:RUNNER_TEMP "ERC-$version"
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+
+          Copy-Item ".\Release\ERC.dll" (Join-Path $staging "ERC.dll")
+          Compress-Archive -Path (Join-Path $staging "ERC.dll") -DestinationPath ".\ERC-$version.zip" -Force
+
+          Get-FileHash ".\ERC-$version.zip" -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  ERC-$version.zip" } |
+            Set-Content ".\ERC-$version.sha256" -Encoding ascii
+
+          "zip=ERC-$version.zip" >> $env:GITHUB_OUTPUT
+          "checksum=ERC-$version.sha256" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ERC-${{ steps.version.outputs.version }}
+          path: |
+            ${{ steps.package.outputs.zip }}
+            ${{ steps.package.outputs.checksum }}
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $args = @(
+            "release", "create", $version,
+            "${{ steps.package.outputs.zip }}",
+            "${{ steps.package.outputs.checksum }}",
+            "--title", "ERC $version",
+            "--notes", "Automated release for ERC $version."
+          )
+
+          if ("${{ github.ref_type }}" -ne "tag") {
+            $args += @("--target", "${{ github.sha }}")
+          }
+
+          gh @args
