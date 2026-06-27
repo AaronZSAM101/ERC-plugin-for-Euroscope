@@ -78,6 +78,11 @@ vector<string> Stringsplit(string str, const const char split)
 	return rst;
 }
 
+void CERCPlugin::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan)
+{
+	m_lastSetRoutes.erase(FlightPlan.GetCallsign());
+}
+
 void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan)
 {
 	// exit if not assumed
@@ -95,7 +100,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	vector<string> route;
 	string last_sid_x_point, first_star_x_point;
 	string airway_next_to_sid, airway_before_star;
-	string sid_exit_point = "";
+	string sid_transition_exit_point = "";
 
 	// prepare data to compare
 	EuroScopePlugIn::CFlightPlanExtractedRoute extracted_route = FlightPlan.GetExtractedRoute();
@@ -123,7 +128,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		if (isdigit(static_cast<unsigned char>(ch))) {
 			break;
 		}
-		sid_exit_point += ch;
+		sid_transition_exit_point += ch;
 	}
 
 	// fliter out all the procedures and runways estimated by ES
@@ -161,7 +166,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		}
 		else
 		{
-			if (point == last_sid_x_point)
+			if (point == last_sid_x_point && i + 1 < route_count)
 			{
 				airway_next_to_sid = extracted_route.GetPointAirwayName(i + 1);
 			}
@@ -172,7 +177,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 			is_sid_seen = true;
 			last_sid_x_point = point;
 		}
-		if (sid_exit_point != "" && is_sid_seen && point == sid_exit_point) {
+		if (sid_transition_exit_point != "" && is_sid_seen && point == sid_transition_exit_point) {
 			last_sid_x_point = point;
 			if (i + 1 < route_count) {
 				airway_next_to_sid = extracted_route.GetPointAirwayName(i + 1);

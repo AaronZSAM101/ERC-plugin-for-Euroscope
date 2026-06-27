@@ -10,6 +10,7 @@ public:
 	CERCPlugin();
 	virtual ~CERCPlugin();
 
+	void OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan);
 	void OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan);
 
 private:
