@@ -78,6 +78,30 @@ vector<string> Stringsplit(string str, const const char split)
 	return rst;
 }
 
+bool HasRouteToken(const vector<string>& route, const string& token)
+{
+	if (token == "") {
+		return false;
+	}
+
+	return find(route.begin(), route.end(), token) != route.end();
+}
+
+bool IsProcedureRouteToken(const string& token)
+{
+	string name = token.substr(0, token.find('/'));
+	bool has_digit = false;
+
+	for (char ch : name) {
+		if (isdigit(static_cast<unsigned char>(ch))) {
+			has_digit = true;
+			break;
+		}
+	}
+
+	return has_digit && !name.empty() && isalpha(static_cast<unsigned char>(name[name.size() - 1]));
+}
+
 void CERCPlugin::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan)
 {
 	m_lastSetRoutes.erase(FlightPlan.GetCallsign());
@@ -86,7 +110,7 @@ void CERCPlugin::OnFlightPlanDisconnect(EuroScopePlugIn::CFlightPlan FlightPlan)
 void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan FlightPlan)
 {
 	// exit if not assumed
-	if (!FlightPlan.GetTrackingControllerIsMe() || !FlightPlan.IsValid()) 
+	if (!FlightPlan.GetTrackingControllerIsMe() || !FlightPlan.IsValid())
 	{
 		return;
 	}
@@ -132,16 +156,22 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 	}
 
 	// fliter out all the procedures and runways estimated by ES
-	if (dep_rwy != "" && raw_route.find(sid + "/" + dep_rwy) == string::npos && raw_route.find(origin + "/" + dep_rwy) == string::npos) {
+	bool has_sid_token = HasRouteToken(splited_raw_route, sid) || (dep_rwy != "" && HasRouteToken(splited_raw_route, sid + "/" + dep_rwy));
+	bool replace_initial_sid = sid != "" && !has_sid_token && !splited_raw_route.empty() && IsProcedureRouteToken(splited_raw_route[0]);
+	bool has_star_token = HasRouteToken(splited_raw_route, star) || (arr_rwy != "" && HasRouteToken(splited_raw_route, star + "/" + arr_rwy));
+	bool replace_final_star = star != "" && !has_star_token && !splited_raw_route.empty() && IsProcedureRouteToken(splited_raw_route[splited_raw_route.size() - 1]);
+
+	if (dep_rwy != "" && !replace_initial_sid && !HasRouteToken(splited_raw_route, sid + "/" + dep_rwy) && !HasRouteToken(splited_raw_route, origin + "/" + dep_rwy)) {
 		dep_rwy = "";
 	}
-	if (sid != "" && raw_route.find(sid) == string::npos) {
+	if (sid != "" && !replace_initial_sid && !HasRouteToken(splited_raw_route, sid) && !HasRouteToken(splited_raw_route, sid + "/" + dep_rwy)) {
 		sid = "";
+		sid_transition_exit_point = "";
 	}
-	if (arr_rwy != "" && raw_route.find(star + "/" + arr_rwy) == string::npos && raw_route.find(destination + "/" + arr_rwy) == string::npos) {
+	if (arr_rwy != "" && !replace_final_star && !HasRouteToken(splited_raw_route, star + "/" + arr_rwy) && !HasRouteToken(splited_raw_route, destination + "/" + arr_rwy)) {
 		arr_rwy = "";
 	}
-	if (star != "" && raw_route.find(star) == string::npos) {
+	if (star != "" && !replace_final_star && !HasRouteToken(splited_raw_route, star) && !HasRouteToken(splited_raw_route, star + "/" + arr_rwy)) {
 		star = "";
 	}
 
@@ -225,21 +255,51 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 		id_airway_before_star = distance(splited_raw_route.begin(), find(splited_raw_route.rbegin(), splited_raw_route.rend(), airway_before_star).base()) - 1;
 	}
 
+	vector<string> route_to_generate = splited_raw_route;
+	if (replace_final_star && !route_to_generate.empty()) {
+		route_to_generate.pop_back();
+	}
+	if (replace_initial_sid && !route_to_generate.empty()) {
+		route_to_generate.erase(route_to_generate.begin());
+		if (id_airway_before_star > 0) {
+			id_airway_before_star--;
+		}
+		else if (id_airway_before_star == 0) {
+			id_airway_before_star = -1;
+		}
+	}
+	else if (sid != "" && !route_to_generate.empty() && (route_to_generate[0] == sid || route_to_generate[0] == sid + "/" + dep_rwy)) {
+		size_t stale_sid_index = 1;
+		if (stale_sid_index < route_to_generate.size() && last_sid_x_point != "" && route_to_generate[stale_sid_index] == last_sid_x_point) {
+			stale_sid_index++;
+		}
+		if (stale_sid_index < route_to_generate.size() && IsProcedureRouteToken(route_to_generate[stale_sid_index])) {
+			route_to_generate.erase(route_to_generate.begin() + stale_sid_index);
+			if (id_airway_before_star > static_cast<int>(stale_sid_index)) {
+				id_airway_before_star--;
+			}
+			else if (id_airway_before_star == static_cast<int>(stale_sid_index)) {
+				id_airway_before_star = -1;
+			}
+		}
+	}
+
 	// generate new route
 	bool is_sid_passed = sid == "" && dep_rwy == "";
 	string tmp1 = "", tmp2 = "";
 	string new_route = "";
-	for (int i = 0; i < splited_raw_route.size(); i++)
+	for (int i = 0; i < route_to_generate.size(); i++)
 	{
 		// avoid repeat
-		if (splited_raw_route[i] == tmp1 || splited_raw_route[i] == tmp2) 
+		if (route_to_generate[i] == tmp1 || route_to_generate[i] == tmp2)
 		{
 			continue;
 		}
 		tmp2 = tmp1;
-		tmp1 = splited_raw_route[i];
+		tmp1 = route_to_generate[i];
 
-		if (!is_sid_passed && (splited_raw_route[i] == airway_next_to_sid || airway_next_to_sid == ""))
+		bool sid_inserted_this_iteration = false;
+		if (!is_sid_passed && (route_to_generate[i] == airway_next_to_sid || airway_next_to_sid == ""))
 		{
 			if (last_sid_x_point == "")
 			{
@@ -302,30 +362,31 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 				}
 			}
 			is_sid_passed = true;
+			sid_inserted_this_iteration = true;
 		}
 
 		if (i == id_airway_before_star)
 		{
 			if (arr_rwy == "")
 			{
-				new_route += splited_raw_route[i] + " " + first_star_x_point + " " + star;
+				new_route += route_to_generate[i] + " " + first_star_x_point + " " + star;
 			}
 			else
 			{
-				new_route += splited_raw_route[i] + " " + first_star_x_point + " " + star + "/" + arr_rwy;
+				new_route += route_to_generate[i] + " " + first_star_x_point + " " + star + "/" + arr_rwy;
 			}
 			break;
 		}
 
 		if (is_sid_passed)
 		{
-			if (splited_raw_route[i] != sid && splited_raw_route[i] != sid + "/" + dep_rwy && splited_raw_route[i] != origin + "/" + dep_rwy)
+			if (route_to_generate[i] != sid && route_to_generate[i] != sid + "/" + dep_rwy && route_to_generate[i] != origin + "/" + dep_rwy && !(sid_inserted_this_iteration && route_to_generate[i] == last_sid_x_point))
 			{
-				new_route += splited_raw_route[i] + " ";
+				new_route += route_to_generate[i] + " ";
 			}
 		}
 
-		if (i == splited_raw_route.size() - 1)
+		if (i == route_to_generate.size() - 1)
 		{
 			if (star != "") {
 				if (arr_rwy == "")
@@ -367,7 +428,7 @@ void CERCPlugin::OnFlightPlanFlightPlanDataUpdate(EuroScopePlugIn::CFlightPlan F
 			flightplan_data.AmendFlightPlan();
 		}
 	}
-	else 
+	else
 	{
 		DisplayUserMessage("message", "Exact Route Cliper", string("set route fail: " + string(FlightPlan.GetCallsign())).c_str(), true, true, true, true, false);
 	}
